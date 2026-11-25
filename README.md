@@ -68,10 +68,7 @@ At 0.001 CKB routing fee per payment, the cost is 1.001 CKB per chunk or 1.004 C
 
 [Capture shot list](docs/screenshots/SHOTLIST.md) Â· [Recording script](docs/RECORDING.md) Â· [Demo recording, pending capture](docs/pay-as-you-verify-demo.mp4)
 
-<details>
-<summary>Demo screenshots</summary>
-
-![both channels ready](docs/screenshots/01-both-channels-ready.png)
+![both channels ready with stage timings](docs/screenshots/01-both-channels-ready-with-stage-timings.png)
 
 ![seller document and chunk count](docs/screenshots/02-seller-document-and-chunk-count.png)
 
@@ -85,10 +82,12 @@ At 0.001 CKB routing fee per payment, the cost is 1.001 CKB per chunk or 1.004 C
 
 ![chunk 1 unlocked and readable](docs/screenshots/07-chunk-1-unlocked-and-readable.png)
 
-![chunk 2 payment receipt](docs/screenshots/08-chunk-2-payment-receipt.png)
+![chunk 2 payment receipt two legs timed](docs/screenshots/08-chunk-2-payment-receipt-two-legs-timed.png)
 
 ![chunk 2 unlocked running total updated](docs/screenshots/09-chunk-2-unlocked-running-total-updated.png)
 
-![stopped two unlocked two still locked](docs/screenshots/10-stopped-two-unlocked-two-still-locked.png)
+![amortisation panel setup vs payment](docs/screenshots/10-amortisation-panel-setup-vs-payment.png)
 
-</details>
+![resizable result area with long text](docs/screenshots/11-resizable-result-area-with-long-text.png)
+
+![stopped two unlocked two still locked](docs/screenshots/12-stopped-two-unlocked-two-still-locked.png)

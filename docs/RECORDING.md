@@ -1,14 +1,16 @@
 ﻿# Pay as you verify recording
 
-Save the recording as `docs/pay-as-you-verify-demo.mp4`. Start after funding and channel setup, with both channels ready and enough inbound liquidity for two payments. Keep the recording silent. Cut payment waits as needed to stay near 2 minutes 10 seconds.
+Start with both channels already ready and enough seller-channel inbound liquidity for two payments. Use a four-paragraph document with at least one long paragraph. Record silently and save as `docs/pay-as-you-verify-demo.mp4`. Cut faucet, channel setup, and any long payment waits.
 
-1. **10 seconds.** Show Buyer A and Seller C together with both CHANNEL_READY labels and their balances.
-2. **12 seconds.** Show the Seller textarea with the four-paragraph sample, Chunk count 4, and Preview length 200.
-3. **15 seconds.** Click Encrypt & create chunk invoices. Copy the generated offer and show the formatted JSON with its preview and four indexed entries. Collapse each JSON entry if needed to fit all four in view.
-4. **13 seconds.** Paste the offer into Received offer and click Validate offer. Show the opening, zero paid, and all four locked rows.
-5. **10 seconds.** Click Decrypt without key on chunk 1. Frame the rejection message and the zero-paid total with the locked rows.
-6. **15 seconds.** Click Pay 1 CKB on chunk 1 and wait for settlement. Open its Payment receipt and show the amount, routing fee, and full hash.
-7. **12 seconds.** Show the unlocked chunk 1 heading and readable text in the Buyer panel. Keep chunk 2 visible below.
-8. **15 seconds.** Click Pay 1 CKB on chunk 2. After settlement, open its Payment receipt and show its amount, fee, and hash.
-9. **14 seconds.** Show both unlocked headings, chunk 2 text, and the updated paid amount with two unlocked and two left.
-10. **14 seconds.** End on an overview with chunks 1 and 2 unlocked and chunks 3 and 4 locked. Leave both remaining pay buttons untouched.
+1. **12 seconds.** Show both CHANNEL_READY labels and the stage tables, including observed and baseline times.
+2. **10 seconds.** Show the seller document, chunk count 4, and preview length 200.
+3. **12 seconds.** Create the offer, show the opening preview and all four indexed JSON entries.
+4. **10 seconds.** Paste and validate the offer. Show the clear preview, zero paid, and four locked chunks.
+5. **8 seconds.** Click Decrypt without key. Show the rejection and the locked chunk.
+6. **13 seconds.** Pay for chunk 1. Open its receipt and show the amount, routing fee, and payment hash.
+7. **10 seconds.** Show readable chunk 1 in the buyer panel.
+8. **18 seconds.** Pay for chunk 2. Open its receipt and hold on both leg observations, their gap, and click-to-Success.
+9. **12 seconds.** Show chunk 2 and the updated total with two unlocked and two left.
+10. **13 seconds.** Show the setup sum, payment average, and setup time per purchase from one to four purchases.
+11. **14 seconds.** Drag the lower edge of a long unlocked result, click Fit to content, and show Copy chunk.
+12. **12 seconds.** Finish on both unlocked chunks with chunks 3 and 4 locked.
