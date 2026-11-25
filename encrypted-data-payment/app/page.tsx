@@ -358,6 +358,28 @@ export default function Page() {
       {opening[role] && <ChannelTiming trace={opening[role]} role={role} now={now} />}
     </section>)}</div>
     <section className="card"><h2>Liquidity</h2><button disabled={busy || !channels.seller || !ready(channels.seller) || BigInt(channels.seller.local_balance) < 500_000_000n} onClick={() => void run(moveLiquidity)}>Send / check 5 CKB transfer</button></section>
+    <section className="card" aria-label="Amortisation">
+      <h2>On-chain setup vs off-chain payments</h2>
+      {(() => {
+        const buyer = opening.buyer;
+        const seller = opening.seller;
+        const live = buyer?.stages.CHANNEL_READY && seller?.stages.CHANNEL_READY;
+        const setup = live ? buyer.stages.CHANNEL_READY - buyer.started + seller.stages.CHANNEL_READY - seller.started : 228_000;
+        const settled = chunks.filter(chunk => chunk.receipt?.status === 'Success');
+        const durations = settled.flatMap(chunk => {
+          const timing = timings[chunk.paymentHash];
+          return timing?.success ? [timing.success - timing.started] : [];
+        });
+        return <>
+          <p>One-time setup, summed across both channels · {seconds(setup)} ({live ? 'observed' : 'measured baseline'})</p>
+          <p>Off-chain click to Success · {durations.length ? seconds(durations.reduce((sum, ms) => sum + ms, 0) / durations.length) + ' average across ' + durations.length + ' timed purchases' : '3.98–4.54 s measured baseline'}</p>
+          <p>{settled.length ? `${seconds(setup / settled.length)} setup per purchase across ${settled.length} completed purchases` : 'Complete a purchase to calculate setup time per purchase.'}</p>
+          <table><thead><tr><th>Purchases</th><th>Setup time per purchase</th></tr></thead><tbody>
+            {[1, 2, 3, 4].map(count => <tr key={count} aria-current={count === settled.length ? 'true' : undefined}><td>{count}</td><td>{seconds(setup / count)}</td></tr>)}
+          </tbody></table>
+        </>;
+      })()}
+    </section>
     <div className="grid exchange"><section className="card"><h2>Seller</h2>
       <textarea aria-label="Seller result" disabled={busy || Boolean(generated)} value={plaintext} onChange={e => setPlaintext(e.target.value)} />
       <label>Chunk count <input type="number" min={1} max={100} value={count} disabled={busy || Boolean(generated)} onChange={e => setCount(e.target.valueAsNumber)} /></label>
