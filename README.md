@@ -1,4 +1,4 @@
-﻿# Pay as you verify
+# Pay as you verify
 
 A Build on CKB Campaign #8 Advanced Quest submission. Buy a document one chunk at a time over Fiber on CKB Testnet.
 
@@ -53,7 +53,7 @@ At 0.001 CKB routing fee per payment, the cost is 1.001 CKB per chunk or 1.004 C
 [Capture shot list](docs/screenshots/SHOTLIST.md) · [Recording script](docs/RECORDING.md) · [Demo recording, pending capture](docs/pay-as-you-verify-demo.mp4)
 
 <details>
-<summary>Demo screenshots, pending capture</summary>
+<summary>Demo screenshots</summary>
 
 ![both channels ready](docs/screenshots/01-both-channels-ready.png)
 
