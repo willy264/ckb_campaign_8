@@ -207,6 +207,10 @@ export default function Page() {
 
   const routeReady = Boolean(connected.buyer && connected.seller && channels.buyer && ready(channels.buyer) && BigInt(channels.buyer.local_balance) >= 100_000_000n && channels.seller && ready(channels.seller) && BigInt(channels.seller.remote_balance) >= 100_000_000n);
 
+  const unlocked = chunks.filter(chunk => chunk.status === 'unlocked').length;
+  const paid = chunks.reduce((total, chunk) => chunk.receipt?.status === 'Success'
+    ? total + 100_000_000n + BigInt(chunk.receipt.fee) : total, 0n);
+
   return <main>
     <p className="eyebrow">Fiber Testnet</p><h1>Pay as you verify</h1>
     {status && <p className="status" role="status">{status}</p>}{error && <p role="alert">{error}</p>}
@@ -232,6 +236,7 @@ export default function Page() {
       <textarea aria-label="Received offer" disabled={busy || Boolean(chunks.length || attempts.length)} value={received} onChange={e => { setReceived(e.target.value); setTested(false); }} />
       <button disabled={busy || !received || !addresses.buyer || Boolean(chunks.length)} onClick={() => void run(validate)}>Validate offer</button>
       {chunks.length > 0 && <><h3>Preview</h3><pre>{preview || 'No preview'}</pre></>}
+      {chunks.length > 0 && <p>{ckb(paid.toString())} CKB paid (including fees) · {unlocked} unlocked · {chunks.length - unlocked} left</p>}
       {chunks.map(chunk => <article key={chunk.paymentHash}>
         <h3>Chunk {chunk.index} · {chunk.status}</h3>
         {!tested && chunk.index === 1 && <button disabled={busy} onClick={() => void run(() => testLock(chunk))}>Decrypt without key</button>}
