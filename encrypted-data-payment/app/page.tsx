@@ -51,7 +51,7 @@ export default function Page() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const saved = readEncryptedProgress(sessionStorage, localStorage);
+    const saved = readEncryptedProgress(localStorage, localStorage) ?? readEncryptedProgress(sessionStorage, localStorage);
     progress.current = saved;
     if (saved) { setGenerated(saved.generatedOffer); setReceived(saved.buyerOfferText); setAttempts(saved.attemptedPaymentHashes ?? (saved.attemptedPaymentHash ? [saved.attemptedPaymentHash] : [])); setTested(saved.triedWithoutKey); }
     setLoaded(true);
@@ -66,7 +66,7 @@ export default function Page() {
     const sellerId = savedNodeIdentifier(localStorage, encryptedSellerProfile);
     if (!buyerId || !sellerId) throw new Error('Start both saved nodes before continuing.');
     const next = { version: 1 as const, buyerId, sellerId, generatedOffer: '', buyerOfferText: '', attemptedPaymentHash: '', triedWithoutKey: false, ...progress.current, ...update };
-    sessionStorage.setItem(encryptedSessionKey, JSON.stringify(next));
+    localStorage.setItem(encryptedSessionKey, JSON.stringify(next));
     progress.current = next;
   }
 
@@ -101,6 +101,19 @@ export default function Page() {
     if (await readChannel(started)) await started.connectPeer(bottle);
     await refresh(role);
   }
+
+  useEffect(() => {
+    if (addresses.buyer && received && !chunks.length && progress.current?.buyerOfferText === received) {
+      const retry = window.setInterval(() => {
+        if (locked.current) return;
+        window.clearInterval(retry);
+        void run(validate);
+      }, 100);
+      return () => window.clearInterval(retry);
+    }
+    // Restore once when the buyer node becomes available.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addresses.buyer]);
 
   async function open(role: Role) {
     const node = nodes.current[role];
@@ -157,6 +170,11 @@ export default function Page() {
       status: attempts.includes(chunk.paymentHash) ? 'paying' : 'locked',
     })));
     setStatus('Offer validated.');
+    for (const chunk of parsed.chunks) {
+      if (!attempts.includes(chunk.paymentHash)) continue;
+      try { await checkPayment({ ...chunk, status: 'paying' }); }
+      catch { setError('A saved payment could not be restored. Use Check payment status to try again.'); }
+    }
   }
 
   async function testLock(chunk: Chunk) {
