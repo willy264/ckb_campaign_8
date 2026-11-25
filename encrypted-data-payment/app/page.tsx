@@ -246,7 +246,7 @@ export default function Page() {
           <p>Amount 1 CKB · Fee {ckb(chunk.receipt.fee)} CKB</p>
           <code>{chunk.receipt.payment_hash}</code>
         </details>}
-        {chunk.status === 'unlocked' && <pre>{chunk.plaintext}</pre>}
+        {chunk.status === 'unlocked' && <ChunkResult index={chunk.index} text={chunk.plaintext ?? ''} copy={text => void run(async () => { await navigator.clipboard.writeText(text); setStatus('Chunk copied.'); })} />}
         {chunk.status === 'paying' && <button disabled={busy} onClick={() => void run(() => checkPayment(chunk))}>Check payment status</button>}
       </article>)}
     </section></div>
@@ -256,4 +256,18 @@ export default function Page() {
         setGenerated(''); setReceived(''); setChunks([]); setAttempts([]); setTested(false); setPreview('');
       })}>Start another offer</button>}
   </main>;
+}
+
+function ChunkResult({ index, text, copy }: { index: number; text: string; copy: (text: string) => void }) {
+  const result = useRef<HTMLTextAreaElement>(null);
+  return <div>
+    <textarea ref={result} readOnly aria-label={`Decrypted chunk ${index}`} value={text} />
+    <button onClick={() => {
+      const area = result.current;
+      if (!area) return;
+      area.style.height = '0px';
+      area.style.height = `${area.scrollHeight + area.offsetHeight - area.clientHeight}px`;
+    }}>Fit to content</button>
+    <button onClick={() => copy(text)}>Copy chunk</button>
+  </div>;
 }
