@@ -1,11 +1,11 @@
-import type { FiberBrowserNode } from '@fiber-pay/sdk/browser';
+﻿import type { FiberBrowserNode } from '@fiber-pay/sdk/browser';
 
 const channelCapacity = 50_000_000_000n;
 
 export const channelFundingGuidance =
   'Fund this address with more than 500 Testnet CKB. Opening the channel uses 500 CKB plus a separate on-chain transaction fee.';
 
-export async function requireNewChannelFunding(node: FiberBrowserNode) {
+export async function readFundingCapacity(node: FiberBrowserNode) {
   const { default_funding_lock_script: script } = await node.nodeInfo();
   const response = await fetch('https://testnet.ckbapp.dev/', {
     method: 'POST',
@@ -22,7 +22,11 @@ export async function requireNewChannelFunding(node: FiberBrowserNode) {
   if (!response.ok || typeof result?.capacity !== 'string') {
     throw new Error('Could not check the Testnet balance. Try again before opening the channel.');
   }
-  if (BigInt(result.capacity) <= channelCapacity) {
+  return BigInt(result.capacity);
+}
+
+export async function requireNewChannelFunding(node: FiberBrowserNode) {
+  if (await readFundingCapacity(node) <= channelCapacity) {
     throw new Error(channelFundingGuidance);
   }
 }

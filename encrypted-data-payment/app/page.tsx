@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { channelFundingGuidance } from '../lib/channel-funding';
+import { channelFundingGuidance, readFundingCapacity } from '../lib/channel-funding';
 import { useEffect, useRef, useState } from 'react';
 import { scriptToAddress, type Channel, type FiberBrowserNode, type GetPaymentResult } from '@fiber-pay/sdk/browser';
 import { decryptResult, toHex } from '../lib/crypto';
@@ -20,6 +20,17 @@ type Chunk = EncryptedOffer & {
 };
 
 type Role = 'buyer' | 'seller';
+type Opening = { started: number; stages: Record<string, number> };
+type PaymentTiming = { started: number; success?: number; seller?: number; buyer?: number };
+const seconds = (ms: number) => `${(ms / 1000).toFixed(2)} s`;
+const stages = [
+  ['NEGOTIATING_FUNDING', '0:03', '0:03'],
+  ['COLLABORATING_FUNDING_TX', '0:25', '0:22'],
+  ['SIGNING_COMMITMENT', '1:00', '0:27'],
+  ['AWAITING_TX_SIGNATURES', '—', '—'],
+  ['AWAITING_CHANNEL_READY', '1:46', '1:06'],
+  ['CHANNEL_READY', '1:51', '1:57'],
+];
 const ckb = (value: string) => `${Number(BigInt(value)) / 100_000_000}`;
 const sample = [
   'Field notes from a weekend on the river. We logged water levels upstream and compared them with the readings at the footbridge. The goal was to identify which measurements could be repeated reliably by another team.',
@@ -47,6 +58,10 @@ export default function Page() {
   const [chunks, setChunks] = useState<Chunk[]>([]);
   const [attempts, setAttempts] = useState<string[]>([]);
   const [tested, setTested] = useState(false);
+  const [opening, setOpening] = useState<Partial<Record<Role, Opening>>>({});
+  const [timings, setTimings] = useState<Record<string, PaymentTiming>>({});
+  const [funding, setFunding] = useState<Partial<Record<Role, string>>>({});
+  const [now, setNow] = useState(0);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
 
@@ -78,10 +93,41 @@ export default function Page() {
     finally { locked.current = false; setBusy(false); }
   }
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 500);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  async function checkFunding(role: Role) {
+    const node = nodes.current[role];
+    if (!node) return;
+    try {
+      const balance = await readFundingCapacity(node);
+      setFunding(previous => ({ ...previous, [role]: balance > 50_000_000_000n
+        ? `Funding confirmed (${ckb(balance.toString())} CKB)`
+        : `Awaiting sufficient confirmed funding (${ckb(balance.toString())} CKB)` }));
+    } catch {
+      setFunding(previous => ({ ...previous, [role]: 'Funding check unavailable. Try again.' }));
+    }
+  }
+
+  function observeChannel(role: Role, channel: Channel) {
+    const state = channel.state.state_name;
+    const at = Date.now();
+    setOpening(previous => {
+      const trace = previous[role];
+      if (!trace || trace.stages[state] || trace.stages.CHANNEL_READY) return previous;
+      const next = { ...trace, stages: { ...trace.stages, [state]: at } };
+      localStorage.setItem(`ckb-opening:${channel.channel_id}`, JSON.stringify(next));
+      return { ...previous, [role]: next };
+    });
+  }
+
   async function refresh(role: Role) {
     const node = nodes.current[role];
     if (!node) return;
     const channel = await readChannel(node);
+    if (channel) observeChannel(role, channel);
     const { peers } = await node.listPeers();
     setConnected((previous) => ({ ...previous, [role]: peers.some(peer => peer.pubkey.replace(/^0x/i, '').toLowerCase() === bottle.pubkey.slice(2)) }));
     setChannels((previous) => ({ ...previous, [role]: channel }));
@@ -98,7 +144,12 @@ export default function Page() {
     nodes.current[role] = started;
     const info = await started.nodeInfo();
     setAddresses((previous) => ({ ...previous, [role]: scriptToAddress(info.default_funding_lock_script, 'testnet') }));
-    if (await readChannel(started)) await started.connectPeer(bottle);
+    const existing = await readChannel(started);
+    if (existing) {
+      const saved = localStorage.getItem(`ckb-opening:${existing.channel_id}`);
+      if (saved) setOpening(previous => ({ ...previous, [role]: JSON.parse(saved) }));
+      await started.connectPeer(bottle);
+    } else void checkFunding(role);
     await refresh(role);
   }
 
@@ -118,11 +169,40 @@ export default function Page() {
   async function open(role: Role) {
     const node = nodes.current[role];
     if (!node) return;
-    const channel = await connectAndOpenChannel(node);
+    const started = Date.now();
+    let active = true;
+    async function watch() {
+      while (active) {
+        const current = await readChannel(node!).catch(() => undefined);
+        if (active && current) observeChannel(role, current);
+        await new Promise(resolve => window.setTimeout(resolve, 500));
+      }
+    }
+    if (!channels[role]) setOpening(previous => ({ ...previous, [role]: { started, stages: {} } }));
+    void watch();
+    let channel;
+    try { channel = await connectAndOpenChannel(node); }
+    finally { active = false; }
     setChannels((previous) => ({ ...previous, [role]: channel }));
     await refresh(role);
     setStatus(channel && ready(channel) ? 'Channel ready.' : 'Opening submitted. Check channel status after confirmation.');
   }
+
+  useEffect(() => {
+    if (!(['buyer', 'seller'] as const).some(role => channels[role] && !ready(channels[role]!))) return;
+    let active = true;
+    async function watch() {
+      while (active) {
+        for (const role of ['buyer', 'seller'] as const) {
+          if (channels[role] && !ready(channels[role]!)) await refresh(role).catch(() => {});
+        }
+        await new Promise(resolve => window.setTimeout(resolve, 500));
+      }
+    }
+    void watch();
+    return () => { active = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channels.buyer?.state.state_name, channels.seller?.state.state_name]);
 
   async function moveLiquidity() {
     const node = nodes.current.seller;
@@ -194,6 +274,30 @@ export default function Page() {
     const node = nodes.current.buyer;
     if (!node || !tested || !routeReady) return;
     const attempted = attempts.includes(chunk.paymentHash);
+    const started = Date.now();
+    const baseline = { buyer: channels.buyer, seller: channels.seller };
+    const timing: PaymentTiming = { started };
+    const publish = () => setTimings(previous => ({ ...previous, [chunk.paymentHash]: { ...timing } }));
+    publish();
+    let active = true;
+    async function watchLeg(role: Role) {
+      const endpoint = nodes.current[role];
+      const before = baseline[role];
+      if (!endpoint || !before) return;
+      while (active && Date.now() - started < 90_000) {
+        const current = await readChannel(endpoint).catch(() => undefined);
+        if (active && current && current.channel_id === before.channel_id
+          && (BigInt(current.local_balance) - BigInt(before.local_balance)) * (role === 'seller' ? 1n : -1n) >= 100_000_000n
+          && !current.pending_tlcs.some(tlc => tlc.payment_hash.toLowerCase() === chunk.paymentHash)) {
+          timing[role] = Date.now();
+          publish();
+          return;
+        }
+        await new Promise(resolve => window.setTimeout(resolve, 250));
+      }
+    }
+    const legs = Promise.all([watchLeg('seller'), watchLeg('buyer')]);
+    try {
     const receipt = await payForOffer(node, chunk, attempted ? chunk.paymentHash : '', hash => {
       const next = attempts.filter(value => value !== chunk.paymentHash);
       if (hash) next.push(hash);
@@ -201,8 +305,16 @@ export default function Page() {
       setAttempts(next);
       updateChunk(chunk, { status: hash ? 'paying' : 'failed' });
     }, chunk.receipt?.status === 'Failed');
+    if (receipt.status === 'Success') {
+      timing.success = Date.now();
+      publish();
+    }
     await acceptPayment(chunk, receipt);
+    if (receipt.status === 'Success') {
+      await Promise.race([legs, new Promise(resolve => window.setTimeout(resolve, 10_000))]);
+    }
     await Promise.all([refresh('buyer'), refresh('seller')]);
+    } finally { active = false; }
   }
 
   async function acceptPayment(chunk: Chunk, receipt: GetPaymentResult) {
@@ -232,15 +344,18 @@ export default function Page() {
   return <main>
     <p className="eyebrow">Fiber Testnet</p><h1>Pay as you verify</h1>
     {status && <p className="status" role="status">{status}</p>}{error && <p role="alert">{error}</p>}
+    <p>Channel opening baseline · A–B 1:51 · C–B 1:57. The last two stages wait for on-chain funding settlement.</p>
+    <h2>Testnet funding and channels</h2>
     <div className="grid">{(['buyer', 'seller'] as const).map((role) => <section className="card" key={role}>
       <h2>{role === 'buyer' ? 'Buyer A' : 'Seller C'}</h2>
       {!addresses[role] && <button disabled={!loaded || busy} onClick={() => void run(() => start(role))}>Start node</button>}
       {addresses[role] && <><code>{addresses[role]}</code><a href="https://faucet.nervos.org" target="_blank" rel="noreferrer">Get Testnet CKB â†—</a>
-        {!channels[role] && <p>{channelFundingGuidance}</p>}
+        {!channels[role] && <><p>{channelFundingGuidance}</p><p>{funding[role] ?? 'Funding status unchecked'}</p><button disabled={busy} onClick={() => void run(() => checkFunding(role))}>Check funding status</button></>}
         <button disabled={busy} onClick={() => void run(() => open(role))}>{channels[role] ? 'Reconnect / check channel' : `Open ${channelFundingCkb} CKB channel`}</button>
         <button disabled={busy} onClick={() => void run(() => refresh(role))}>Refresh channel status</button>
       </>}
-      {channels[role] && <><code>{channels[role].state.state_name}</code><p>{role}: {ckb(channels[role].local_balance)} CKB Â· Bottle: {ckb(channels[role].remote_balance)} CKB</p></>}
+      {channels[role] && <><code>{channels[role].state.state_name}</code><p>{role === 'buyer' ? 'B to A · Buyer A' : 'C to B · Seller C'}: {ckb(channels[role].local_balance)} CKB Â· Bottle: {ckb(channels[role].remote_balance)} CKB</p></>}
+      {opening[role] && <ChannelTiming trace={opening[role]} role={role} now={now} />}
     </section>)}</div>
     <section className="card"><h2>Liquidity</h2><button disabled={busy || !channels.seller || !ready(channels.seller) || BigInt(channels.seller.local_balance) < 500_000_000n} onClick={() => void run(moveLiquidity)}>Send / check 5 CKB transfer</button></section>
     <div className="grid exchange"><section className="card"><h2>Seller</h2>
@@ -259,6 +374,7 @@ export default function Page() {
         <h3>Chunk {chunk.index} · {chunk.status}</h3>
         {!tested && chunk.index === 1 && <button disabled={busy} onClick={() => void run(() => testLock(chunk))}>Decrypt without key</button>}
         {(chunk.status === 'locked' || chunk.status === 'failed') && <button disabled={busy || !tested || !routeReady} onClick={() => void run(() => pay(chunk))}>Pay 1 CKB</button>}
+        {timings[chunk.paymentHash] && <PaymentTimeline timing={timings[chunk.paymentHash]} now={now} active={busy && chunk.status === 'paying'} />}
         {chunk.receipt?.status === 'Success' && <details>
           <summary>Payment receipt</summary>
           <p>Amount 1 CKB · Fee {ckb(chunk.receipt.fee)} CKB</p>
@@ -288,4 +404,37 @@ function ChunkResult({ index, text, copy }: { index: number; text: string; copy:
     }}>Fit to content</button>
     <button onClick={() => copy(text)}>Copy chunk</button>
   </div>;
+}
+
+function ChannelTiming({ trace, role, now }: { trace: Opening; role: Role; now: number }) {
+  const observed = Object.entries(trace.stages).sort((a, b) => a[1] - b[1]);
+  const last = observed.at(-1);
+  const readyAt = trace.stages.CHANNEL_READY;
+  const elapsed = Math.max(0, (readyAt ?? now) - trace.started);
+  const expected = role === 'buyer' ? 111_000 : 117_000;
+  return <section aria-label="Channel stage timings">
+    <h3>Channel stage timings</h3>
+    <p>{seconds(elapsed)} elapsed · {readyAt ? 'Ready' : elapsed > expected ? 'Past measured baseline. Check funding confirmation and peer status.' : 'Within measured opening window'}</p>
+    <table><thead><tr><th>Stage</th><th>Baseline at</th><th>Observed at</th><th>In stage</th></tr></thead><tbody>
+      {stages.map(([stage, buyer, seller]) => {
+        const entry = observed.findIndex(([name]) => stage === name);
+        const at = trace.stages[stage];
+        const end = observed[entry + 1]?.[1] ?? now;
+        return <tr key={stage}><td>{stage.toLowerCase().replaceAll('_', ' ')}</td><td>{role === 'buyer' ? buyer : seller}</td>
+          <td>{at ? seconds(at - trace.started) : readyAt ? 'Missed by polling' : '—'}</td>
+          <td>{at && stage !== 'CHANNEL_READY' ? seconds(Math.max(0, end - at)) : '—'}</td></tr>;
+      })}
+    </tbody></table>
+    {!readyAt && last && <p>Last observed stage {seconds(Math.max(0, now - last[1]))} ago.</p>}
+  </section>;
+}
+
+function PaymentTimeline({ timing, now, active }: { timing: PaymentTiming; now: number; active: boolean }) {
+  const mark = (at?: number) => at ? seconds(at - timing.started) : 'Awaiting observation';
+  return <section aria-label="Payment timing">
+    <p>Click to Success · {timing.success ? mark(timing.success) : active ? seconds(Math.max(0, now - timing.started)) : 'Success not observed'}</p>
+    <p>C to B · {mark(timing.seller)}<br />B to A · {mark(timing.buyer)}<br />
+      Settlement gap · {timing.seller && timing.buyer ? seconds(Math.abs(timing.buyer - timing.seller)) : 'Awaiting both legs'}</p>
+    <p>Measured baseline · Pending 1.88–2.48 s · Success 3.98–4.54 s · Both legs 7.11 s on payment 1 · Gap about 3.1 s.</p>
+  </section>;
 }
