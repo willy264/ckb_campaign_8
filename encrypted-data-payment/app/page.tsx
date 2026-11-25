@@ -183,20 +183,26 @@ export default function Page() {
       setAttempts(next);
       updateChunk(chunk, { status: hash ? 'paying' : 'failed' });
     }, chunk.receipt?.status === 'Failed');
-    acceptPayment(chunk, receipt);
+    await acceptPayment(chunk, receipt);
     await Promise.all([refresh('buyer'), refresh('seller')]);
   }
 
-  function acceptPayment(chunk: Chunk, receipt: GetPaymentResult) {
+  async function acceptPayment(chunk: Chunk, receipt: GetPaymentResult) {
     updateChunk(chunk, { receipt, status: receipt.status === 'Failed' ? 'failed' : 'paying' });
     setStatus(`Chunk ${chunk.index} payment: ${receipt.status}`);
     if (receipt.status === 'Failed') setError(receipt.failed_error ?? 'Payment failed.');
+    if (receipt.status !== 'Success') return;
+    if (receipt.payment_hash.toLowerCase() !== chunk.paymentHash || !receipt.payment_preimage) {
+      throw new Error('The receipt did not return the expected payment preimage.');
+    }
+    const plaintext = await decryptResult(chunk, receipt.payment_preimage);
+    updateChunk(chunk, { status: 'unlocked', plaintext });
   }
 
   async function checkPayment(chunk: Chunk) {
     const node = nodes.current.buyer;
     if (!node) return;
-    acceptPayment(chunk, await node.getPayment({ payment_hash: chunk.paymentHash }));
+    await acceptPayment(chunk, await node.getPayment({ payment_hash: chunk.paymentHash }));
   }
 
   const routeReady = Boolean(connected.buyer && connected.seller && channels.buyer && ready(channels.buyer) && BigInt(channels.buyer.local_balance) >= 100_000_000n && channels.seller && ready(channels.seller) && BigInt(channels.seller.remote_balance) >= 100_000_000n);
@@ -230,6 +236,12 @@ export default function Page() {
         <h3>Chunk {chunk.index} · {chunk.status}</h3>
         {!tested && chunk.index === 1 && <button disabled={busy} onClick={() => void run(() => testLock(chunk))}>Decrypt without key</button>}
         {(chunk.status === 'locked' || chunk.status === 'failed') && <button disabled={busy || !tested || !routeReady} onClick={() => void run(() => pay(chunk))}>Pay 1 CKB</button>}
+        {chunk.receipt?.status === 'Success' && <details>
+          <summary>Payment receipt</summary>
+          <p>Amount 1 CKB · Fee {ckb(chunk.receipt.fee)} CKB</p>
+          <code>{chunk.receipt.payment_hash}</code>
+        </details>}
+        {chunk.status === 'unlocked' && <pre>{chunk.plaintext}</pre>}
         {chunk.status === 'paying' && <button disabled={busy} onClick={() => void run(() => checkPayment(chunk))}>Check payment status</button>}
       </article>)}
     </section></div>
