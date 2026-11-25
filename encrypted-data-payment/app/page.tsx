@@ -349,12 +349,12 @@ export default function Page() {
     <div className="grid">{(['buyer', 'seller'] as const).map((role) => <section className="card" key={role}>
       <h2>{role === 'buyer' ? 'Buyer A' : 'Seller C'}</h2>
       {!addresses[role] && <button disabled={!loaded || busy} onClick={() => void run(() => start(role))}>Start node</button>}
-      {addresses[role] && <><code>{addresses[role]}</code><a href="https://faucet.nervos.org" target="_blank" rel="noreferrer">Get Testnet CKB â†—</a>
+      {addresses[role] && <><code>{addresses[role]}</code><a href="https://faucet.nervos.org" target="_blank" rel="noreferrer">Get Testnet CKB ↗</a>
         {!channels[role] && <><p>{channelFundingGuidance}</p><p>{funding[role] ?? 'Funding status unchecked'}</p><button disabled={busy} onClick={() => void run(() => checkFunding(role))}>Check funding status</button></>}
         <button disabled={busy} onClick={() => void run(() => open(role))}>{channels[role] ? 'Reconnect / check channel' : `Open ${channelFundingCkb} CKB channel`}</button>
         <button disabled={busy} onClick={() => void run(() => refresh(role))}>Refresh channel status</button>
       </>}
-      {channels[role] && <><code>{channels[role].state.state_name}</code><p>{role === 'buyer' ? 'B to A · Buyer A' : 'C to B · Seller C'}: {ckb(channels[role].local_balance)} CKB Â· Bottle: {ckb(channels[role].remote_balance)} CKB</p></>}
+      {channels[role] && <><code>{channels[role].state.state_name}</code><p>{role === 'buyer' ? 'B to A · Buyer A' : 'C to B · Seller C'}: {ckb(channels[role].local_balance)} CKB · Bottle: {ckb(channels[role].remote_balance)} CKB</p></>}
       {opening[role] && <ChannelTiming trace={opening[role]} role={role} now={now} />}
     </section>)}</div>
     <section className="card"><h2>Liquidity</h2><button disabled={busy || !channels.seller || !ready(channels.seller) || BigInt(channels.seller.local_balance) < 500_000_000n} onClick={() => void run(moveLiquidity)}>Send / check 5 CKB transfer</button></section>
