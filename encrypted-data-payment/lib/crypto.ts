@@ -37,3 +37,15 @@ export async function decryptResult(payload: EncryptedPayload, keyHex: string) {
   );
   return new TextDecoder().decode(plaintext);
 }
+
+export async function encryptChunks(chunks: string[]) {
+  const usedIVs = new Set<string>();
+  const encrypted = [];
+  for (const chunk of chunks) {
+    let result = await encryptResult(chunk);
+    while (usedIVs.has(result.payload.iv)) result = await encryptResult(chunk);
+    usedIVs.add(result.payload.iv);
+    encrypted.push(result);
+  }
+  return encrypted;
+}
