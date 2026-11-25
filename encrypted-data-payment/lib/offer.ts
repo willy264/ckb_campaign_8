@@ -154,3 +154,36 @@ export function parseOffer(value: string) {
     lastHop: normalizeLastHop(offer.lastHop),
   } satisfies EncryptedOffer;
 }
+
+export async function createDocumentOffer(seller: FiberBrowserNode, channel: Channel, chunks: string[], preview: string) {
+  const invoices = await createChunkInvoices(seller, channel, chunks);
+  return JSON.stringify({
+    version: 3,
+    cipher: 'AES-256-GCM',
+    preview,
+    chunks: invoices.map(({ version, cipher, ...chunk }, offset) => ({ index: offset + 1, ...chunk })),
+  }, null, 2);
+}
+
+export function parseDocumentOffer(value: string) {
+  const document: unknown = JSON.parse(value);
+  if (isJsonObject(document) && document.version === 2) {
+    return { preview: '', chunks: [{ index: 1, ...parseOffer(value) }] };
+  }
+  if (!isJsonObject(document) || document.version !== 3 || document.cipher !== 'AES-256-GCM'
+    || typeof document.preview !== 'string' || !Array.isArray(document.chunks)
+    || document.chunks.length < 1 || document.chunks.length > 100) {
+    throw new Error('Enter a valid chunked AES-256-GCM offer.');
+  }
+  const hashes = new Set<string>();
+  const ivs = new Set<string>();
+  const chunks = document.chunks.map((chunk: unknown, offset: number) => {
+    if (!isJsonObject(chunk) || chunk.index !== offset + 1) throw new Error('Invalid chunk index.');
+    const offer = parseOffer(JSON.stringify({ ...chunk, version: 2, cipher: document.cipher }));
+    if (hashes.has(offer.paymentHash) || ivs.has(offer.iv)) throw new Error('Duplicate chunk payment hash or IV.');
+    hashes.add(offer.paymentHash);
+    ivs.add(offer.iv);
+    return { index: offset + 1, ...offer };
+  });
+  return { preview: document.preview, chunks };
+}
