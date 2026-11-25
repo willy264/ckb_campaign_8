@@ -1,6 +1,6 @@
 import { bottle } from './fiber';
 import type { Channel, FiberBrowserNode } from '@fiber-pay/sdk/browser';
-import { encryptResult, type EncryptedPayload } from './crypto';
+import { encryptChunks, encryptResult, type EncryptedPayload } from './crypto';
 
 export type EncryptedOffer = EncryptedPayload & {
   version: 2;
@@ -92,6 +92,19 @@ export async function createOffer(seller: FiberBrowserNode, sellerChannel: Chann
     throw new Error('Seller channel does not have a confirmed outpoint.');
   }
   const encrypted = await encryptResult(plaintext);
+  return JSON.stringify(await invoiceChunk(seller, sellerChannel, encrypted), null, 2);
+}
+
+export async function createChunkInvoices(seller: FiberBrowserNode, channel: Channel, chunks: string[]) {
+  const offers = [];
+  for (const encrypted of await encryptChunks(chunks)) {
+    offers.push(await invoiceChunk(seller, channel, encrypted));
+  }
+  return offers;
+}
+
+async function invoiceChunk(seller: FiberBrowserNode, sellerChannel: Channel, encrypted: Awaited<ReturnType<typeof encryptResult>>) {
+  if (!sellerChannel.channel_outpoint) throw new Error('Seller channel does not have a confirmed outpoint.');
   const invoice = await seller.newInvoice({
     amount: '0x5f5e100', // 1 CKB
     currency: 'Fibt',
@@ -120,7 +133,7 @@ export async function createOffer(seller: FiberBrowserNode, sellerChannel: Chann
       ),
     },
   };
-  return JSON.stringify(offer, null, 2);
+  return offer;
 }
 
 export function parseOffer(value: string) {
