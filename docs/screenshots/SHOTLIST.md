@@ -12,3 +12,5 @@
 10. `10-amortisation-panel-setup-vs-payment.png` — Show the setup sum, payment average, and setup time per purchase from one to four purchases.
 11. `11-resizable-result-area-with-long-text.png` — Drag the lower edge of a long unlocked result, click Fit to content, and show Copy chunk.
 12. `12-stopped-two-unlocked-two-still-locked.png` — Finish on both unlocked chunks with chunks 3 and 4 locked.
+
+The full-window capture shows the four offer entries with horizontal scrolling for long ciphertext. Shot 05 frames the global rejection message. Shot 12 frames the second unlocked chunk and both remaining locked chunks. The first unlocked chunk is immediately above the visible area.
