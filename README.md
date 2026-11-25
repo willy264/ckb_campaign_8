@@ -1,4 +1,4 @@
-﻿# Pay as you verify
+# Pay as you verify
 
 A Build on CKB Campaign #8 Advanced Quest submission. Buy a document one chunk at a time over Fiber on CKB Testnet.
 
@@ -48,7 +48,7 @@ Open http://localhost:3001 in a browser with Web Locks and SharedArrayBuffer. Ke
 ## Try the flow
 
 1. Start Buyer A and Seller C. Fund each node's displayed Testnet address with enough for a 500 CKB channel and its on-chain fee.
-2. Open each channel and refresh until both show `CHANNEL_READY`. Check Bottleâ€™s balance on the seller channel. Use the starterâ€™s **Send / check 5 CKB transfer** if inbound liquidity is needed.
+2. Open each channel and refresh until both show `CHANNEL_READY`. Check Bottle’s balance on the seller channel. Use the starter’s **Send / check 5 CKB transfer** if inbound liquidity is needed.
 3. Keep the sample document or paste your own. Set the chunk count and preview length, then click **Encrypt & create chunk invoices**.
 4. Copy the JSON into **Received offer** and click **Validate offer**. Check the preview and the four locked rows.
 5. Click **Decrypt without key** on chunk 1 and confirm the rejection.
@@ -66,7 +66,9 @@ At 0.001 CKB routing fee per payment, the cost is 1.001 CKB per chunk or 1.004 C
 
 ## Demo
 
-[Capture shot list](docs/screenshots/SHOTLIST.md) Â· [Recording script](docs/RECORDING.md) Â· [Demo recording, pending capture](docs/pay-as-you-verify-demo.mp4)
+The session stopwatch is visible in all screenshots and throughout the recording.
+
+[Capture shot list](docs/screenshots/SHOTLIST.md) · [Recording script](docs/RECORDING.md) · [Demo recording](docs/pay-as-you-verify-demo.mp4)
 
 ![both channels ready with stage timings](docs/screenshots/01-both-channels-ready-with-stage-timings.png)
 

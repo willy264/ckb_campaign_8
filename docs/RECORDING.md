@@ -1,4 +1,4 @@
-﻿# Pay as you verify recording
+# Pay as you verify recording
 
 Start with both channels already ready and enough seller-channel inbound liquidity for two payments. Use a four-paragraph document with at least one long paragraph. Record silently and save as `docs/pay-as-you-verify-demo.mp4`. Cut faucet, channel setup, and any long payment waits.
 
