@@ -19,6 +19,7 @@ export type EncryptedLessonProgress = {
   sellerProfileKey?: string;
   generatedOffer: string;
   buyerOfferText: string;
+  attemptedPaymentHashes?: string[];
   attemptedPaymentHash: string;
   triedWithoutKey: boolean;
   completedSteps?: string[];
@@ -52,6 +53,10 @@ export function readEncryptedProgress(session: Reader, profiles: Reader): Encryp
       ...(value.buyerProfileKey ? { buyerProfileKey: buyerKey } : {}),
       ...(value.sellerProfileKey ? { sellerProfileKey: sellerKey } : {}),
       generatedOffer: value.generatedOffer, buyerOfferText: value.buyerOfferText,
+      ...(Array.isArray(value.attemptedPaymentHashes) ? {
+        attemptedPaymentHashes: value.attemptedPaymentHashes.filter((hash: unknown) =>
+          typeof hash === 'string' && /^0x[0-9a-f]{64}$/.test(hash)),
+      } : {}),
       attemptedPaymentHash: value.attemptedPaymentHash, triedWithoutKey: value.triedWithoutKey,
       ...(Array.isArray(value.completedSteps) ? { completedSteps: value.completedSteps.filter((step: unknown) => typeof step === 'string' && ['setup', 'encrypt', 'transfer', 'pay', 'decrypt'].includes(step)) } : {}) };
   } catch { return null; }
@@ -59,6 +64,7 @@ export function readEncryptedProgress(session: Reader, profiles: Reader): Encryp
 
 export function canSubmitEncryptedPayment(state: {
   routeReady: boolean; hasOffer: boolean; triedWithoutKey: boolean;
+  attemptedPaymentHashes?: string[];
   attemptedPaymentHash: string; paymentStatus: string; busy: boolean;
 }) {
   return state.routeReady && state.hasOffer && state.triedWithoutKey && !state.busy

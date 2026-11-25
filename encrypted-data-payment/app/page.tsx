@@ -1,18 +1,32 @@
-'use client';
+﻿'use client';
 
 import { channelFundingGuidance } from '../lib/channel-funding';
 import { useEffect, useRef, useState } from 'react';
 import { scriptToAddress, type Channel, type FiberBrowserNode, type GetPaymentResult } from '@fiber-pay/sdk/browser';
 import { decryptResult, toHex } from '../lib/crypto';
 import { bottle, channelFundingCkb, connectAndOpenChannel, readChannel, ready, startRole } from '../lib/fiber';
-import { createOffer, parseOffer, type EncryptedOffer } from '../lib/offer';
+import { createDocumentOffer, parseDocumentOffer, type EncryptedOffer } from '../lib/offer';
 import { payForOffer, validateOffer } from '../lib/payment';
 import { createBrowserNodeSession } from '../lib/node-session';
 import { encryptedSessionKey, encryptedBuyerProfile, encryptedSellerProfile, savedNodeIdentifier, readEncryptedProgress, type EncryptedLessonProgress } from '../lib/progress';
 
+import { splitDocument } from '../lib/chunks';
+
+type Chunk = EncryptedOffer & {
+  index: number;
+  status: 'locked' | 'paying' | 'unlocked' | 'failed';
+  receipt?: GetPaymentResult;
+  plaintext?: string;
+};
+
 type Role = 'buyer' | 'seller';
 const ckb = (value: string) => `${Number(BigInt(value)) / 100_000_000}`;
-const sample = 'Fiber Testnet report\n\nPayment settled. The encrypted result is readable.';
+const sample = [
+  'Field notes from a weekend on the river. We logged water levels upstream and compared them with the readings at the footbridge. The goal was to identify which measurements could be repeated reliably by another team.',
+  'Our first pass started at dawn. The upstream gauge gave consistent readings across three visits, though the shaded bank was noticeably colder. We marked the gauge position and recorded the time of each observation.',
+  'At the footbridge we measured a stronger current after midday. We moved the sampling point a few steps downstream, where the bank was stable and each volunteer could reach the same depth.',
+  'For the next visit we will repeat the measurements with a second gauge and share the raw readings. The notes include the site layout, the sampling order, and the conditions at each stop.',
+].join('\n\n');
 
 export default function Page() {
   const nodes = useRef<Partial<Record<Role, FiberBrowserNode>>>({});
@@ -27,19 +41,19 @@ export default function Page() {
   const [plaintext, setPlaintext] = useState(sample);
   const [generated, setGenerated] = useState('');
   const [received, setReceived] = useState('');
-  const [offer, setOffer] = useState<EncryptedOffer | null>(null);
-  const [attempt, setAttempt] = useState('');
+  const [count, setCount] = useState(4);
+  const [previewLength, setPreviewLength] = useState(200);
+  const [preview, setPreview] = useState('');
+  const [chunks, setChunks] = useState<Chunk[]>([]);
+  const [attempts, setAttempts] = useState<string[]>([]);
   const [tested, setTested] = useState(false);
-  const [payment, setPayment] = useState<GetPaymentResult | null>(null);
-  const [key, setKey] = useState('');
-  const [decrypted, setDecrypted] = useState('');
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
     const saved = readEncryptedProgress(sessionStorage, localStorage);
     progress.current = saved;
-    if (saved) { setGenerated(saved.generatedOffer); setReceived(saved.buyerOfferText); setAttempt(saved.attemptedPaymentHash); setTested(saved.triedWithoutKey); }
+    if (saved) { setGenerated(saved.generatedOffer); setReceived(saved.buyerOfferText); setAttempts(saved.attemptedPaymentHashes ?? (saved.attemptedPaymentHash ? [saved.attemptedPaymentHash] : [])); setTested(saved.triedWithoutKey); }
     setLoaded(true);
     const owned = sessions.current;
     const stop = () => { for (const session of Object.values(owned)) void session.stop().catch(() => {}); };
@@ -118,86 +132,111 @@ export default function Page() {
   }
 
   async function makeOffer() {
-    if (!nodes.current.seller || !channels.seller || !routeReady || generated || attempt) return;
-    const value = await createOffer(nodes.current.seller, channels.seller, plaintext);
-    save({ generatedOffer: value }); setGenerated(value); setStatus('Invoice created.');
+    if (!nodes.current.seller || !channels.seller || !routeReady || generated || attempts.length) return;
+    if (!Number.isSafeInteger(previewLength) || previewLength < 0) throw new Error('Enter a non-negative preview length.');
+    const parts = splitDocument(plaintext, count);
+    const opening = Array.from(plaintext.trim()).slice(0, previewLength).join('');
+    const value = await createDocumentOffer(nodes.current.seller, channels.seller, parts, opening);
+    save({ generatedOffer: value });
+    setGenerated(value);
+    setStatus('Chunk invoices created.');
   }
 
   async function validate() {
-    if (!nodes.current.buyer) return;
-    const parsed = parseOffer(received);
-    await validateOffer(nodes.current.buyer, parsed);
-    if (attempt && parsed.paymentHash.toLowerCase() !== attempt.toLowerCase()) throw new Error('Restore the offer for the previous payment.');
-    save({ buyerOfferText: received }); setOffer(parsed); setStatus('Offer validated.');
+    const node = nodes.current.buyer;
+    if (!node) return;
+    const parsed = parseDocumentOffer(received);
+    if (attempts.some(hash => !parsed.chunks.some(chunk => chunk.paymentHash === hash.toLowerCase()))) {
+      throw new Error('Restore the offer for the previous payments.');
+    }
+    for (const chunk of parsed.chunks) await validateOffer(node, chunk);
+    save({ buyerOfferText: received });
+    setPreview(parsed.preview);
+    setChunks(parsed.chunks.map(chunk => ({
+      ...chunk,
+      status: attempts.includes(chunk.paymentHash) ? 'paying' : 'locked',
+    })));
+    setStatus('Offer validated.');
   }
 
-  async function testLock() {
-    if (!offer) return;
-    try { await decryptResult(offer, toHex(crypto.getRandomValues(new Uint8Array(32)))); }
-    catch { save({ triedWithoutKey: true }); setTested(true); setStatus('Decryption rejected: key unavailable.'); }
+  async function testLock(chunk: Chunk) {
+    try { await decryptResult(chunk, toHex(crypto.getRandomValues(new Uint8Array(32)))); }
+    catch {
+      save({ triedWithoutKey: true });
+      setTested(true);
+      setStatus('Decryption rejected: key unavailable.');
+    }
   }
 
-  async function pay() {
-    if (!nodes.current.buyer || !offer || !tested || !routeReady) return;
-    const result = await payForOffer(nodes.current.buyer, offer, attempt, (hash) => {
-      save({ attemptedPaymentHash: hash }); setAttempt(hash);
-    }, payment?.status === 'Failed');
-    acceptPayment(result);
+  function updateChunk(chunk: Chunk, update: Partial<Chunk>) {
+    setChunks(previous => previous.map(item => item.index === chunk.index ? { ...item, ...update } : item));
+  }
+
+  async function pay(chunk: Chunk) {
+    const node = nodes.current.buyer;
+    if (!node || !tested || !routeReady) return;
+    const attempted = attempts.includes(chunk.paymentHash);
+    const receipt = await payForOffer(node, chunk, attempted ? chunk.paymentHash : '', hash => {
+      const next = attempts.filter(value => value !== chunk.paymentHash);
+      if (hash) next.push(hash);
+      save({ attemptedPaymentHashes: next, attemptedPaymentHash: '' });
+      setAttempts(next);
+      updateChunk(chunk, { status: hash ? 'paying' : 'failed' });
+    }, chunk.receipt?.status === 'Failed');
+    acceptPayment(chunk, receipt);
     await Promise.all([refresh('buyer'), refresh('seller')]);
   }
 
-  function acceptPayment(result: GetPaymentResult) {
-    setPayment(result); setStatus(`Payment: ${result.status}`);
-    if (result.status === 'Failed') setError(result.failed_error ?? 'Payment failed. Check channel liquidity before retrying.');
-    if (result.status === 'Success' && result.payment_preimage) setKey(result.payment_preimage);
+  function acceptPayment(chunk: Chunk, receipt: GetPaymentResult) {
+    updateChunk(chunk, { receipt, status: receipt.status === 'Failed' ? 'failed' : 'paying' });
+    setStatus(`Chunk ${chunk.index} payment: ${receipt.status}`);
+    if (receipt.status === 'Failed') setError(receipt.failed_error ?? 'Payment failed.');
   }
 
-  async function checkPayment() {
-    if (!nodes.current.buyer || !offer || !attempt) return;
-    await validateOffer(nodes.current.buyer, offer);
-    acceptPayment(await nodes.current.buyer.getPayment({ payment_hash: attempt as `0x${string}` }));
-  }
-
-  function startAnotherOffer() {
-    if (busy || (attempt && payment?.status !== 'Failed')) return;
-    save({ generatedOffer: '', buyerOfferText: '', attemptedPaymentHash: '', triedWithoutKey: false, completedSteps: [] });
-    setGenerated(''); setReceived(''); setOffer(null); setAttempt(''); setTested(false);
-    setPayment(null); setKey(''); setDecrypted(''); setError('');
-    setStatus('Create a fresh encrypted offer.');
+  async function checkPayment(chunk: Chunk) {
+    const node = nodes.current.buyer;
+    if (!node) return;
+    acceptPayment(chunk, await node.getPayment({ payment_hash: chunk.paymentHash }));
   }
 
   const routeReady = Boolean(connected.buyer && connected.seller && channels.buyer && ready(channels.buyer) && BigInt(channels.buyer.local_balance) >= 100_000_000n && channels.seller && ready(channels.seller) && BigInt(channels.seller.remote_balance) >= 100_000_000n);
-  const canSubmit = Boolean(offer && tested && routeReady && !key && (!attempt || payment?.status === 'Failed'));
 
   return <main>
-    <p className="eyebrow">Fiber Testnet</p><h1>Pay to decrypt</h1>
+    <p className="eyebrow">Fiber Testnet</p><h1>Pay as you verify</h1>
     {status && <p className="status" role="status">{status}</p>}{error && <p role="alert">{error}</p>}
     <div className="grid">{(['buyer', 'seller'] as const).map((role) => <section className="card" key={role}>
       <h2>{role === 'buyer' ? 'Buyer A' : 'Seller C'}</h2>
       {!addresses[role] && <button disabled={!loaded || busy} onClick={() => void run(() => start(role))}>Start node</button>}
-      {addresses[role] && <><code>{addresses[role]}</code><a href="https://faucet.nervos.org" target="_blank" rel="noreferrer">Get Testnet CKB ↗</a>
+      {addresses[role] && <><code>{addresses[role]}</code><a href="https://faucet.nervos.org" target="_blank" rel="noreferrer">Get Testnet CKB â†—</a>
         {!channels[role] && <p>{channelFundingGuidance}</p>}
         <button disabled={busy} onClick={() => void run(() => open(role))}>{channels[role] ? 'Reconnect / check channel' : `Open ${channelFundingCkb} CKB channel`}</button>
         <button disabled={busy} onClick={() => void run(() => refresh(role))}>Refresh channel status</button>
       </>}
-      {channels[role] && <><code>{channels[role].state.state_name}</code><p>{role}: {ckb(channels[role].local_balance)} CKB · Bottle: {ckb(channels[role].remote_balance)} CKB</p></>}
+      {channels[role] && <><code>{channels[role].state.state_name}</code><p>{role}: {ckb(channels[role].local_balance)} CKB Â· Bottle: {ckb(channels[role].remote_balance)} CKB</p></>}
     </section>)}</div>
     <section className="card"><h2>Liquidity</h2><button disabled={busy || !channels.seller || !ready(channels.seller) || BigInt(channels.seller.local_balance) < 500_000_000n} onClick={() => void run(moveLiquidity)}>Send / check 5 CKB transfer</button></section>
     <div className="grid exchange"><section className="card"><h2>Seller</h2>
       <textarea aria-label="Seller result" disabled={busy || Boolean(generated)} value={plaintext} onChange={e => setPlaintext(e.target.value)} />
-      <button disabled={busy || !routeReady || !plaintext.trim() || Boolean(generated || attempt)} onClick={() => void run(makeOffer)}>Encrypt & create 1 CKB Invoice</button>
+      <label>Chunk count <input type="number" min={1} max={100} value={count} disabled={busy || Boolean(generated)} onChange={e => setCount(e.target.valueAsNumber)} /></label>
+      <label>Preview length <input type="number" min={0} value={previewLength} disabled={busy || Boolean(generated)} onChange={e => setPreviewLength(e.target.valueAsNumber)} /></label>
+      <button disabled={busy || !routeReady || !plaintext.trim() || Boolean(generated || attempts.length)} onClick={() => void run(makeOffer)}>Encrypt & create chunk invoices</button>
       <textarea aria-label="Generated offer" readOnly value={generated} />
       <button disabled={!generated || busy} onClick={() => void run(async () => { await navigator.clipboard.writeText(generated); setStatus('Offer copied.'); })}>Copy offer</button>
     </section><section className="card"><h2>Buyer</h2>
-      <textarea aria-label="Received offer" disabled={busy || Boolean(offer || attempt)} value={received} onChange={e => { setReceived(e.target.value); setTested(false); }} />
-      <button disabled={busy || !received || !addresses.buyer || Boolean(offer)} onClick={() => void run(validate)}>Validate offer</button>
-      {!tested && <button disabled={busy || !offer} onClick={() => void run(testLock)}>Decrypt without key</button>}
-      {canSubmit && <button disabled={busy} onClick={() => void run(pay)}>{attempt ? 'Retry failed payment' : 'Pay 1 CKB'}</button>}
-      {attempt && !key && <button disabled={busy || !offer || !addresses.buyer} onClick={() => void run(checkPayment)}>Check payment status</button>}
-      <button disabled={busy || !offer || !key || Boolean(decrypted)} onClick={() => void run(async () => { setDecrypted(await decryptResult(offer!, key)); })}>Decrypt with revealed key</button>
+      <textarea aria-label="Received offer" disabled={busy || Boolean(chunks.length || attempts.length)} value={received} onChange={e => { setReceived(e.target.value); setTested(false); }} />
+      <button disabled={busy || !received || !addresses.buyer || Boolean(chunks.length)} onClick={() => void run(validate)}>Validate offer</button>
+      {chunks.length > 0 && <><h3>Preview</h3><pre>{preview || 'No preview'}</pre></>}
+      {chunks.map(chunk => <article key={chunk.paymentHash}>
+        <h3>Chunk {chunk.index} · {chunk.status}</h3>
+        {!tested && chunk.index === 1 && <button disabled={busy} onClick={() => void run(() => testLock(chunk))}>Decrypt without key</button>}
+        {(chunk.status === 'locked' || chunk.status === 'failed') && <button disabled={busy || !tested || !routeReady} onClick={() => void run(() => pay(chunk))}>Pay 1 CKB</button>}
+        {chunk.status === 'paying' && <button disabled={busy} onClick={() => void run(() => checkPayment(chunk))}>Check payment status</button>}
+      </article>)}
     </section></div>
-    {payment?.status === 'Success' && <section className="card"><h2>Receipt</h2><p>Amount: 1 CKB · Fee: {ckb(payment.fee)} CKB · Total: {ckb(`0x${(100_000_000n + BigInt(payment.fee)).toString(16)}`)} CKB</p><code>{payment.payment_hash}</code></section>}
-    {decrypted && <section className="result"><h2>Decrypted result</h2><pre>{decrypted}</pre></section>}
-    {(generated || received) && (!attempt || payment?.status === 'Failed') && <button disabled={busy} onClick={() => void run(async () => startAnotherOffer())}>Start another offer</button>}
+    {(generated || received) && chunks.every(chunk => chunk.receipt?.status === 'Success' || !attempts.includes(chunk.paymentHash) || chunk.status === 'failed')
+      && (chunks.length > 0 || attempts.length === 0) && <button disabled={busy} onClick={() => void run(async () => {
+        save({ generatedOffer: '', buyerOfferText: '', attemptedPaymentHash: '', attemptedPaymentHashes: [], triedWithoutKey: false });
+        setGenerated(''); setReceived(''); setChunks([]); setAttempts([]); setTested(false); setPreview('');
+      })}>Start another offer</button>}
   </main>;
 }
