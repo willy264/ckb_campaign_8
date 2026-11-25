@@ -341,7 +341,7 @@ export default function Page() {
   const paid = chunks.reduce((total, chunk) => chunk.receipt?.status === 'Success'
     ? total + 100_000_000n + BigInt(chunk.receipt.fee) : total, 0n);
 
-  return <main>
+  return <><div className="app-scroll"><main>
     <p className="eyebrow">Fiber Testnet</p><h1>Pay as you verify</h1>
     {status && <p className="status" role="status">{status}</p>}{error && <p role="alert">{error}</p>}
     <p>Channel opening baseline · A–B 1:51 · C–B 1:57. The last two stages wait for on-chain funding settlement.</p>
@@ -411,7 +411,7 @@ export default function Page() {
         save({ generatedOffer: '', buyerOfferText: '', attemptedPaymentHash: '', attemptedPaymentHashes: [], triedWithoutKey: false });
         setGenerated(''); setReceived(''); setChunks([]); setAttempts([]); setTested(false); setPreview('');
       })}>Start another offer</button>}
-  </main>;
+  </main></div><SessionStopwatch /></>;
 }
 
 function ChunkResult({ index, text, copy }: { index: number; text: string; copy: (text: string) => void }) {
@@ -459,4 +459,29 @@ function PaymentTimeline({ timing, now, active }: { timing: PaymentTiming; now: 
       Settlement gap · {timing.seller && timing.buyer ? seconds(Math.abs(timing.buyer - timing.seller)) : 'Awaiting both legs'}</p>
     <p>Measured baseline · Pending 1.88–2.48 s · Success 3.98–4.54 s · Both legs 7.11 s on payment 1 · Gap about 3.1 s.</p>
   </section>;
+}
+
+function SessionStopwatch() {
+  const output = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    let frame: number;
+    const format = (value: number) => String(value).padStart(2, '0');
+    function tick(elapsed: number) {
+      const hundredths = Math.floor(elapsed / 10);
+      const hours = Math.floor(hundredths / 360000);
+      const minutes = Math.floor(hundredths / 6000) % 60;
+      const seconds = Math.floor(hundredths / 100) % 60;
+      const time = `${format(hours)}:${format(minutes)}:${format(seconds)}.${format(hundredths % 100)}`;
+      if (output.current && output.current.textContent !== time) output.current.textContent = time;
+      frame = requestAnimationFrame(tick);
+    }
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  return <aside className="session-stopwatch" aria-label="Session stopwatch">
+    <span ref={output} role="timer" aria-live="off">00:00:00.00</span>
+    <div aria-hidden="true"><span>hr</span><span>min</span><span>sec</span></div>
+  </aside>;
 }

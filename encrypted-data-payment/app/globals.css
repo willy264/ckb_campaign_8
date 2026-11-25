@@ -34,3 +34,25 @@ table { width: 100%; table-layout: fixed; }
 .chunk-result-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .chunk-result-actions button { flex: 1 1 120px; max-width: 100%; }
 
+:root { --stopwatch-space: 84px; }
+.app-scroll { height: calc(100dvh - var(--stopwatch-space)); overflow: auto; }
+.session-stopwatch {
+  position: fixed;
+  z-index: 10;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(8px, env(safe-area-inset-bottom));
+  padding: 6px 14px;
+  color: #dfffc5;
+  background: #151915;
+  border: 1px solid #394139;
+  font: 800 clamp(20px, 7vw, 34px)/1.2 ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.session-stopwatch div {
+  display: grid;
+  width: 8ch;
+  grid-template-columns: repeat(3, 1fr);
+  text-align: center;
+}
+.session-stopwatch div span { font-size: 11px; }
+
