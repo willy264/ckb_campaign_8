@@ -416,15 +416,15 @@ export default function Page() {
 
 function ChunkResult({ index, text, copy }: { index: number; text: string; copy: (text: string) => void }) {
   const result = useRef<HTMLTextAreaElement>(null);
-  return <div>
-    <textarea ref={result} readOnly aria-label={`Decrypted chunk ${index}`} value={text} />
-    <button onClick={() => {
+  return <div className="chunk-result">
+    <textarea className="chunk-result-text" ref={result} readOnly aria-label={`Decrypted chunk ${index}`} value={text} />
+    <div className="chunk-result-actions"><button onClick={() => {
       const area = result.current;
       if (!area) return;
       area.style.height = '0px';
       area.style.height = `${area.scrollHeight + area.offsetHeight - area.clientHeight}px`;
     }}>Fit to content</button>
-    <button onClick={() => copy(text)}>Copy chunk</button>
+    <button onClick={() => copy(text)}>Copy chunk</button></div>
   </div>;
 }
 

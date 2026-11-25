@@ -18,3 +18,19 @@ code { overflow-wrap: anywhere; color: #a3f53a; }
 .result span { color: #8e978d; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .result pre { min-height: 80px; margin: 0; padding: 14px; background: #0a0d0a; color: #dfffc5; white-space: pre-wrap; }
 @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } .route { align-items: stretch; flex-direction: column; text-align: center; } }
+
+main, main * { min-inline-size: 0; overflow-wrap: anywhere; }
+.card, .result { grid-template-columns: minmax(0, 1fr); }
+textarea {
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+  resize: vertical;
+}
+pre { max-width: 100%; white-space: pre-wrap; }
+input { max-width: 100%; }
+table { width: 100%; table-layout: fixed; }
+.chunk-result { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.chunk-result-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.chunk-result-actions button { flex: 1 1 120px; max-width: 100%; }
+
